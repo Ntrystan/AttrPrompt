@@ -32,11 +32,10 @@ parser.add_argument("--output_dir", default='.', type=str, help="the folder for 
 args = parser.parse_args()
 args.api_key = api_key
 
-if  args.dataset in ['arxiv']:
-    args.domain = 'scientific paper abstract'
-    args.prefix = ""
-else:
+if args.dataset not in ['arxiv']:
     raise NotImplementedError
+args.domain = 'scientific paper abstract'
+args.prefix = ""
 
 async def dispatch_openai_requests(
     messages_list: List[List[Dict[str, Any]]],
@@ -90,15 +89,17 @@ def main(args):
         tot_cnt = 0
         print(f"Generate a {args.domain} using prompt: {args.prompt}, t= {args.temperature}")
         candidate_class = [ (cls_id, x) for cls_id, x in enumerate(label_names) if x != class_name]
-        while tot_cnt < args.n_sample:            
+        while tot_cnt < args.n_sample:    
             random.shuffle(candidate_class)
             num_add_topics = min(4, np.random.zipf(2.5, 1)[0]) - 1
             if num_add_topics == 0:
                 class_name_gen = class_name
                 class_idx = [i]
             else:
-                class_name_gen = class_name + ", " +  ",".join([x[1] for x in candidate_class[:num_add_topics]])
-                
+                class_name_gen = f"{class_name}, " + ",".join(
+                    [x[1] for x in candidate_class[:num_add_topics]]
+                )
+
                 class_idx = [i] + [x[0] for x in candidate_class[:num_add_topics]]
             args.prompt = re.sub("_", " ", f"Suppose you are a writer for {args.domain}. Give a synthetic {args.domain} about {args.prefix} {class_name_gen}.")
             if j % 10 == 0:
@@ -109,7 +110,7 @@ def main(args):
             try:
                 os.makedirs(f"{args.output_dir}/{class_name}/", exist_ok= True)
                 f = open(f"{args.output_dir}/{prefix}", 'w')
-                
+
                 response = asyncio.run(
                     dispatch_openai_requests(
                         messages_list=[
@@ -139,7 +140,7 @@ def main(args):
                 print("APIConnectionError", attempt)
                 # exit()
                 time.sleep(5)
-                continue 
+                continue
             ans = [clean_str(x['choices'][0]['message']['content']) for x in response]
             for a in ans:
                 example = {"_id": class_idx, "label": class_name_gen, "text": a}

@@ -65,17 +65,15 @@ else:
     raise NotImplementedError
 
 def gen_example(attr_dict):
-    lengths = {}
-    for x in attr_dict:
-        lengths[x] = len(attr_dict[x])
+    lengths = {x: len(attr_dict[x]) for x in attr_dict}
     while True:
         return_dict = {}
         for z in lengths:
-            
+
             idx_z = np.random.randint(low = 0, high = lengths[z], dtype = int)
             return_dict[z] = idx_z 
             # lst.append(return_dict)
-      
+
         yield return_dict
 
 async def dispatch_openai_requests(
@@ -134,7 +132,7 @@ def main(args):
     print(label_names)
     model = args.model_name
     openai.api_key = args.api_key
-    
+
     attr_dict = {}
     for attr in args.attributes:
         if 'subtopics' in attr:
@@ -156,12 +154,23 @@ def main(args):
         print(f"Prompt, Give a synthetic sample of {args.domain} about {re.sub('_', ' ', class_name)} following the requirements below")
         sent_cnt = 0
         attempt = 0
-        attr_dict_cls = {}
-        for attr in attr_dict:
-            if attr in ['subtopics', 'similar', 'brands', 'product_name', 'product_name_filter', "experience", "resource", "scenario", "scenario_filter"]:
-                attr_dict_cls[attr] = attr_dict[attr][class_name]
-            else:
-                attr_dict_cls[attr] = attr_dict[attr]
+        attr_dict_cls = {
+            attr: attr_dict[attr][class_name]
+            if attr
+            in [
+                'subtopics',
+                'similar',
+                'brands',
+                'product_name',
+                'product_name_filter',
+                "experience",
+                "resource",
+                "scenario",
+                "scenario_filter",
+            ]
+            else attr_dict[attr]
+            for attr in attr_dict
+        }
         prompt_lst = []
         attr_lst = []
         examples = []
@@ -231,30 +240,27 @@ def main(args):
             if len(prompt_lst) == args.batch_size:
                 try:
                     attempt += 1
-                    return_msg = call_api_async(prompt_lst, model, args.temperature, args.max_tokens)                    
+                    return_msg = call_api_async(prompt_lst, model, args.temperature, args.max_tokens)
                     assert len(return_msg) == len(attr_lst)
                     valid = 0
                     tmp = []
-                    for (msg, attr) in zip(return_msg, attr_lst):
+                    for msg, attr in zip(return_msg, attr_lst):
                         if "I apologize"  in msg or  "sorry"  in msg or  "Sorry" in msg or  "an AI language model" in msg or "I cannot perform" in msg:
                             continue
-                        else:
-                            valid += 1
-                            example = {"_id": i, "text": clean_str(msg)}
-                            example.update(attr)
-                            examples.append( example)
-                            tmp.append(example)
-                    sent_cnt += valid 
+                        valid += 1
+                        example = {"_id": i, "text": clean_str(msg)}
+                        example |= attr
+                        examples.append( example)
+                        tmp.append(example)
+                    sent_cnt += valid
                     prompt_lst = []
                     attr_lst = []
                     print(f"CLass {i}: {class_name}, Attempt: {attempt}, Sent cnt: {sent_cnt}. ")
                     prefix = f"gen_examples/{class_name}/train_p{args.top_p}_{i}_{attempt}.jsonl"
                     os.makedirs(f"{args.output_dir}/gen_examples/{class_name}", exist_ok= True)
-                    f = open(f"{args.output_dir}/{prefix}", 'w')
-                    for e in tmp:
-                        f.write(json.dumps(e) + "\n")
-                    f.close()
-
+                    with open(f"{args.output_dir}/{prefix}", 'w') as f:
+                        for e in tmp:
+                            f.write(json.dumps(e) + "\n")
                 except openai.error.RateLimitError:
                     print("Rate Limit Error! Attempt:", attempt)
                     prompt_lst = []
@@ -272,7 +278,7 @@ def main(args):
                     prompt_lst = []
                     attr_lst = []
                     time.sleep(5)
-                    continue 
+                    continue
                 except openai.error.InvalidRequestError:
                     print("InvalidRequestError! Invalid Request:", attempt)
                     prompt_lst = []

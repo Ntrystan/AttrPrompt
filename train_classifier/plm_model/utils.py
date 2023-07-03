@@ -89,8 +89,7 @@ class InputExample(object):
 
     def to_dict(self):
         """Serializes this instance to a Python dictionary."""
-        output = copy.deepcopy(self.__dict__)
-        return output
+        return copy.deepcopy(self.__dict__)
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
@@ -122,8 +121,7 @@ class InputFeatures(object):
 
     def to_dict(self):
         """Serializes this instance to a Python dictionary."""
-        output = copy.deepcopy(self.__dict__)
-        return output
+        return copy.deepcopy(self.__dict__)
 
     def to_json_string(self):
         """Serializes this instance to a JSON string."""
@@ -148,7 +146,7 @@ class Processor(object):
         elif self.args.task in ['arxiv']:
             self.num_label = 98
         #for i in range(self.num_label):
-        self.relation_labels = [x for x in range(self.num_label)]
+        self.relation_labels = list(range(self.num_label))
         self.label2id = {x:x for x in range(self.num_label)}
         self.id2label = {x:x for x in range(self.num_label)}
 
@@ -164,17 +162,13 @@ class Processor(object):
     def _create_examples(self, data, set_type):
         examples = []
         for i, d in enumerate(data):
-            guid = "%s-%s" % (set_type, i)
+            guid = f"{set_type}-{i}"
             try:
                 text_a = d["text"].strip().replace('\\n', ' ').replace('\\', ' ').strip("\n\t\"")
             except:
                 text_a = d["text_a"].strip().replace('\\n', ' ').replace('\\', ' ').strip("\n\t\"")
-            label = d["_id"] 
-            if 'text_b' in d:
-                text_b = d["text_b"]
-            else:
-                text_b = ''
-
+            label = d["_id"]
+            text_b = d["text_b"] if 'text_b' in d else ''
             if i % 5000 == 0:
                 logger.info(d)
             examples.append(InputExample(guid=guid, text_a=text_a, text_b = text_b, label=label))
@@ -196,7 +190,7 @@ class Processor(object):
         elif mode == 'contrast':
             file_to_read = file_to_read
 
-        logger.info("LOOKING AT {}".format(os.path.join(self.args.data_dir, file_to_read)))
+        logger.info(f"LOOKING AT {os.path.join(self.args.data_dir, file_to_read)}")
         # if mode == 'contrast':
         #     return self._create_examples(self.read_data(os.path.join(self.args.data_dir, file_to_read)), mode)
         # else:
@@ -273,10 +267,16 @@ def load_and_cache_examples(args, tokenizer, mode, size = -1, contra_name = None
 
         else:
             raise Exception("For mode, Only train, dev, test is available")
-        features = convert_examples_to_features(examples, max_seq_len, tokenizer, add_sep_token=args.add_sep_token, multi_label=True if  args.multi_label else False)
+        features = convert_examples_to_features(
+            examples,
+            max_seq_len,
+            tokenizer,
+            add_sep_token=args.add_sep_token,
+            multi_label=bool(args.multi_label),
+        )
         logger.info("Saving features into cached file %s", cached_features_file)
         torch.save(features, cached_features_file)
-   
+
     # Convert to Tensors and build dataset
     if size > 0:
         import random 
@@ -309,12 +309,7 @@ def load_and_cache_unlabeled_examples(args, tokenizer, mode, train_size = 100, s
     # Load data features from cache or dataset file
     cached_features_file = os.path.join(
         args.cache_dir,
-        'cached_{}_{}_{}_{}_unlabel'.format(
-            mode,
-            args.task,
-            list(filter(None, args.model_name_or_path.split("/"))).pop(),
-            args.max_seq_len,
-        )
+        f'cached_{mode}_{args.task}_{list(filter(None, args.model_name_or_path.split("/"))).pop()}_{args.max_seq_len}_unlabel',
     )
 
     if os.path.exists(cached_features_file) and args.auto_load:
@@ -325,7 +320,7 @@ def load_and_cache_unlabeled_examples(args, tokenizer, mode, train_size = 100, s
 
         assert mode == "unlabeled"
         examples = processor.get_examples("unlabeled")
-        
+
         features = convert_examples_to_features(examples, args.max_seq_len, tokenizer, add_sep_token=args.add_sep_token)
         logger.info("Saving features into cached file %s", cached_features_file)
         torch.save(features, cached_features_file)
@@ -361,23 +356,15 @@ def convert_examples_to_features(examples, max_seq_len, tokenizer,
             logger.info("Writing example %d of %d" % (ex_index, len(examples)))
         #print(example.text_a)
         tokens_a = tokenizer.tokenize(example.text_a)
-        if example.text_b != "":
-            tokens_b = tokenizer.tokenize(example.text_b)
-        else:
-            tokens_b = ''
-
+        tokens_b = tokenizer.tokenize(example.text_b) if example.text_b != "" else ''
         # Account for [CLS] and [SEP] with "- 2" and with "- 3" for RoBERTa.
-        if add_sep_token:
-            special_tokens_count = 2
-        else:
-            special_tokens_count = 1
-        if tokens_b != '':
-            if len(tokens_a) > max_seq_len - special_tokens_count:
-                tokens_a = tokens_a[:(max_seq_len - special_tokens_count)]
-        else:
+        special_tokens_count = 2 if add_sep_token else 1
+        if tokens_b == '':
             cutoff_len = int((max_seq_len - special_tokens_count) * 0.7)
             if len(tokens_a) > cutoff_len:
                 tokens_a = tokens_a[:cutoff_len]
+        elif len(tokens_a) > max_seq_len - special_tokens_count:
+            tokens_a = tokens_a[:(max_seq_len - special_tokens_count)]
         tokens = tokens_a
         if tokens_b != '':
             tokens += [tokenizer.sep_token]
@@ -408,19 +395,25 @@ def convert_examples_to_features(examples, max_seq_len, tokenizer,
         token_type_ids = token_type_ids + ([pad_token_segment_id] * padding_length)
 
 
-        assert len(input_ids) == max_seq_len, "Error with input length {} vs {}".format(len(input_ids), max_seq_len)
-        assert len(attention_mask) == max_seq_len, "Error with attention mask length {} vs {}".format(len(attention_mask), max_seq_len)
-        assert len(token_type_ids) == max_seq_len, "Error with token type length {} vs {}".format(len(token_type_ids), max_seq_len)
+        assert (
+            len(input_ids) == max_seq_len
+        ), f"Error with input length {len(input_ids)} vs {max_seq_len}"
+        assert (
+            len(attention_mask) == max_seq_len
+        ), f"Error with attention mask length {len(attention_mask)} vs {max_seq_len}"
+        assert (
+            len(token_type_ids) == max_seq_len
+        ), f"Error with token type length {len(token_type_ids)} vs {max_seq_len}"
 
         label_id = int(example.label) if not multi_label else list(example.label)
 
         if ex_index < 1:
             logger.info("*** Example ***")
-            logger.info("guid: %s" % example.guid)
-            logger.info("tokens: %s" % " ".join([str(x) for x in tokens]))
-            logger.info("input_ids: %s" % " ".join([str(x) for x in input_ids]))
-            logger.info("attention_mask: %s" % " ".join([str(x) for x in attention_mask]))
-            logger.info("token_type_ids: %s" % " ".join([str(x) for x in token_type_ids]))
+            logger.info(f"guid: {example.guid}")
+            logger.info(f'tokens: {" ".join([str(x) for x in tokens])}')
+            logger.info(f'input_ids: {" ".join([str(x) for x in input_ids])}')
+            logger.info(f'attention_mask: {" ".join([str(x) for x in attention_mask])}')
+            logger.info(f'token_type_ids: {" ".join([str(x) for x in token_type_ids])}')
             if multi_label:
                 logger.info(f"label: {label_id}")
             else:

@@ -34,12 +34,11 @@ parser.add_argument("--output_dir", default='.', type=str, help="the folder for 
 args = parser.parse_args()
 args.api_key = api_key
 
-if args.dataset in ['arxiv']:
-    args.domain = 'scientific paper'
-    args.attributes = ["length", "subtopics", "technique", "style", "similar"]
-    args.metadata = ""
-else:
+if args.dataset not in ['arxiv']:
     raise NotImplementedError
+args.domain = 'scientific paper'
+args.attributes = ["length", "subtopics", "technique", "style", "similar"]
+args.metadata = ""
 
 async def dispatch_openai_requests(
     messages_list: List[List[Dict[str, Any]]],
@@ -107,17 +106,15 @@ def main(args):
     # while True:
     # Check this url for more info about the parameters
     # https://platform.openai.com/docs/api-reference/completions/create
-    
+
     attr_dict = {}
     for attr in args.attributes:
         if 'subtopics' in attr:
             attr_name = 'subtopics_filter'
-        else:
-            attr_name = attr 
-        if 'subtopics' in attr:
             attr_dict['subtopics'] =  json.load(open(f"../datasets/{args.dataset}/{args.model_type}/{args.model_name}/{attr_name}/subtopics.json", "r"))
             print(len(attr_dict['subtopics']))
         else:
+            attr_name = attr
             attr_dict[attr] = load_attributes(attr_name = attr_name, model = model, dataset = args.dataset, method = args.model_type, classes = label_names)
             print(attr, len(attr_dict[attr]))
 
@@ -128,13 +125,13 @@ def main(args):
         prompt_lst = []
         attr_lst = []
         examples = []
-       
+
         random.seed(i + 1234)
         while sent_cnt < args.n_sample:
             subtopic_dict = attr_dict['subtopics'][subtopic]
             labels = subtopic_dict["lbl"]
             label_ids = [id2label[x] for x in labels] # topic id
-            
+
             style = random.sample(attr_dict["style"], 1)[0]
             length = random.sample(attr_dict["length"], 1)[0]
             technique = [random.sample(attr_dict["technique"][x], 1)[0] for x in labels]
@@ -145,7 +142,7 @@ def main(args):
                         1. the paper abstract should focus on '{re.sub(' ', '_', subtopic)}';\n \
                         2. should be in length between {length} words and {int(length) + 50} words;\n \
                         3. the paper should use the techniques relevant to {technique};\n \
-                        4. the style of the paper should be '{style}'"            
+                        4. the style of the paper should be '{style}'"
             if i % 200 == 0 and attempt == 0:
                 print(prompt_input)
             prompt_lst.append(
@@ -159,25 +156,22 @@ def main(args):
                     valid = 0
                     tmp = []
                     for (msg, attr) in zip(return_msg, attr_lst):
-                        if "I apologize"  in msg or  "sorry"  in msg or  "Sorry" in msg or "an AI language model" in msg: # invalid contents
+                        if "I apologize"  in msg or  "sorry"  in msg or  "Sorry" in msg or "an AI language model" in msg:
                             continue
-                        else:
-                            valid += 1
-                            example = {"_id": label_ids, "label": labels, "text": clean_str(msg)}
-                            example.update(attr)
-                            examples.append( example)
-                            tmp.append(example)
-                    sent_cnt += valid 
+                        valid += 1
+                        example = {"_id": label_ids, "label": labels, "text": clean_str(msg)}
+                        example |= attr
+                        examples.append( example)
+                        tmp.append(example)
+                    sent_cnt += valid
                     prompt_lst = []
                     attr_lst = []
                     print(f"Subclass {i}: {re.sub(' ', '_', subtopic)}, Attempt: {attempt}, Sent cnt: {sent_cnt}. ")
                     prefix = f"gen_examples/{re.sub(' ', '_', subtopic)}/train_p{args.top_p}_{i}_{attempt}.jsonl"
                     os.makedirs(f"{args.output_dir}/gen_examples/{re.sub(' ', '_', subtopic)}", exist_ok= True)
-                    f = open(f"{args.output_dir}/{prefix}", 'w')
-                    for e in tmp:
-                        f.write(json.dumps(e) + "\n")
-                    f.close()
-
+                    with open(f"{args.output_dir}/{prefix}", 'w') as f:
+                        for e in tmp:
+                            f.write(json.dumps(e) + "\n")
                 except openai.error.RateLimitError:
                     print("Rate Limit Error! Attempt:", attempt)
                     prompt_lst = []
@@ -195,7 +189,7 @@ def main(args):
                     prompt_lst = []
                     attr_lst = []
                     time.sleep(5)
-                    continue 
+                    continue
                 except openai.error.InvalidRequestError:
                     print("API Error! Invalid Request:", attempt)
                     prompt_lst = []
