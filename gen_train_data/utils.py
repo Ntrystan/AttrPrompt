@@ -34,8 +34,7 @@ def load_attributes(attr_name = "", model = "", dataset = "", method = "", class
     else:
         lst = []
         with open(f"../datasets/{dataset}/{method}/{model}/{attr_name}/{attr_name}.txt", 'r') as f:
-            for lines in f:
-                lst.append(lines.strip("\n"))
+            lst.extend(lines.strip("\n") for lines in f)
         return lst 
 
 

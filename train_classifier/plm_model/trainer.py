@@ -53,11 +53,11 @@ def compute_metrics_rel(key, prediction):
 
         if gold == 0 and guess == 0:
             pass
-        elif gold == 0 and guess != 0:
+        elif gold == 0:
             guessed_by_relation[guess] += 1
-        elif gold != 0 and guess == 0:
+        elif guess == 0:
             gold_by_relation[gold] += 1
-        elif gold != 0 and guess != 0:
+        else:
             guessed_by_relation[guess] += 1
             gold_by_relation[gold] += 1
             if gold == guess:
@@ -176,7 +176,12 @@ class Trainer(object):
 
     def save_model(self, stage = 0):
         output_dir = os.path.join(
-            self.args.output_dir,  "checkpoint-{}".format(len(self.train_dataset)), self.args.model_type, "iter-{}".format(stage), f"seed{self.args.train_seed}")
+            self.args.output_dir,
+            f"checkpoint-{len(self.train_dataset)}",
+            self.args.model_type,
+            f"iter-{stage}",
+            f"seed{self.args.train_seed}",
+        )
         if not os.path.exists(output_dir):
             os.makedirs(output_dir)
         model_to_save = (
@@ -317,12 +322,25 @@ class Trainer(object):
     def train(self, n_sample = 20):
         train_sampler = RandomSampler(self.train_dataset)
         train_dataloader = DataLoader(self.train_dataset, sampler=train_sampler, batch_size=self.args.batch_size)
-        
+
         no_decay = ['bias', 'LayerNorm.weight']
         optimizer_grouped_parameters = [
-            {'params': [p for n, p in self.model.named_parameters() if not any(nd in n for nd in no_decay)],
-            'weight_decay': self.args.weight_decay},
-            {'params': [p for n, p in self.model.named_parameters() if any(nd in n for nd in no_decay)], 'weight_decay': 0.0}
+            {
+                'params': [
+                    p
+                    for n, p in self.model.named_parameters()
+                    if all(nd not in n for nd in no_decay)
+                ],
+                'weight_decay': self.args.weight_decay,
+            },
+            {
+                'params': [
+                    p
+                    for n, p in self.model.named_parameters()
+                    if any(nd in n for nd in no_decay)
+                ],
+                'weight_decay': 0.0,
+            },
         ]
         optimizer = AdamW(optimizer_grouped_parameters, lr=self.args.learning_rate, eps=self.args.adam_epsilon)
         training_steps = max(self.args.max_steps, int(self.args.num_train_epochs) * len(train_dataloader))
@@ -364,14 +382,14 @@ class Trainer(object):
                     del inputs['token_type_ids']
                 if self.args.multi_label:
                     del inputs["labels"]
-               
+
                 outputs = self.model(**inputs)
                 if  self.args.multi_label:
                     logits = outputs[0]
                     loss = criterion(input = logits, target = batch[3].float())
                 else:
                     loss = outputs[0]
-                
+
                 if self.args.gradient_accumulation_steps > 1:
                     loss = loss / self.args.gradient_accumulation_steps           
                 if torch.cuda.device_count() > 1:
@@ -391,7 +409,7 @@ class Trainer(object):
                     break
 
             loss_dev, acc_dev, f1_dev = self.evaluate('dev', global_step)
-            
+
             loss_test, acc_test, f1_test = 0 ,0, 0
             loss_test, acc_test, f1_test = self.evaluate('test', global_step)
             if acc_dev > best_dev:

@@ -115,7 +115,7 @@ def main(args):
     with open(f"../datasets/{args.dataset}/label.txt", 'r') as f:
         label_names = [x.lower().replace(" ", "_").strip('\n') for x in f.readlines()]
     print(label_names)
-    
+
     model = args.model_name
     prompt = args.prompt
     openai.api_key = args.api_key
@@ -127,32 +127,28 @@ def main(args):
     attributes = load_attributes(attr_name = args.attribute, model = args.model_name, dataset = args.dataset, method = args.model_type, classes = label_names)
 
     similar_keywords = load_attributes(attr_name = 'similar', model = args.model_name, dataset = args.dataset, method = args.model_type, classes = label_names)
-    # print(attributes, similar_keywords)
-    # exit()
-    i = 0
     max_reject = 5
     for c in tqdm(label_names):
-        i += 1        
         similar_keyword = ",".join(similar_keywords[c])
         args.prompt = [re.sub("_", " ", f"Consider {x}. Is it relevant to the following categories: {similar_keyword}? Return 1 for yes and 0 for no.") for x in attributes[c]]
-        
+
         print(f"Consider {attributes[c][0]}. Is it relevant to the following categories: {similar_keyword}? Return 1 for yes (related to any of these categories) and 0 for no. You only need to return one number.")
         n_reject = 0
         args.prompt = split_list(args.prompt, 25)
         for prompt in args.prompt:
             msg_lst = [
                         [{"role": "user", "content": p}] for p in prompt
-                    ] 
+                    ]
             succeed = 0
             while succeed == 0:
                 try:
                     return_msg = call_api_async(msg_lst, model)
                     print(attributes[c], return_msg)
-                    assert len(return_msg) == len(prompt) and len(prompt) == len(attributes[c])
+                    assert len(return_msg) == len(prompt) == len(attributes[c])
                     prefix = f"{args.attribute}_filter/{c}.jsonl"
                     os.makedirs(f"{args.output_dir}/{args.attribute}_filter/", exist_ok= True)
                     f = open(f"{args.output_dir}/{prefix}", 'w')
-                    
+
                     for msg, x, attr in zip(return_msg, prompt, attributes[c]):                        
                         msg = msg.lower()
                         if n_reject < max_reject and ('yes' in msg or '1' in msg):
@@ -160,9 +156,9 @@ def main(args):
                             print(f"Removing {attr} for {c}!")
                         else:
                             f.write(attr + '\n')
-                            
+
                     succeed = 1
-                    # exit()
+                                    # exit()
                 except openai.error.RateLimitError:
                     print("Rate Limit Error!")
                     time.sleep(10)
